@@ -1,5 +1,9 @@
 Changelog
 =========
+0.7.2 (2022-09-20)
+------------------
+* Add consumer that subscribes to new model instances only
+
 0.7.1 (2022-09-19)
 ------------------
 * Fix user not being set in request

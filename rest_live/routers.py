@@ -1,6 +1,9 @@
 from typing import Dict, Type
 
-from rest_live.consumers import SubscriptionConsumer
+from rest_live.consumers import (
+    InstanceCreatedSubscriptionConsumer,
+    SubscriptionConsumer,
+)
 from rest_live.mixins import RealtimeMixin
 
 
@@ -39,5 +42,14 @@ class RealtimeRouter:
         return type(
             "BoundSubscriptionConsumer",
             (SubscriptionConsumer,),
+            dict(registry=self.registry, public=self.public),
+        )
+
+
+class InstanceCreatedRouter(RealtimeRouter):
+    def as_consumer(self):
+        return type(
+            "BoundInstanceCreatedSubscriptionConsumer",
+            (InstanceCreatedSubscriptionConsumer,),
             dict(registry=self.registry, public=self.public),
         )

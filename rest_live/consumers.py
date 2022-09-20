@@ -1,13 +1,14 @@
-from typing import Any, Dict, Type, List, Union, Set
 from dataclasses import dataclass
+from typing import Any, Dict, List, Type, Union
 
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.http import Http404
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied
 
-from rest_live import get_group_name, DELETED, UPDATED, CREATED
+from rest_live import CREATED, DELETED, UPDATED, get_group_name
 from rest_live.mixins import RealtimeMixin
+
 
 KwargType = Dict[str, Union[int, str]]
 
@@ -160,7 +161,9 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     pks_to_lookup_in_queryset=dict(
                         {
                             inst["pk"]: inst[view.lookup_field]
-                            for inst in view.get_queryset().all().values("pk", view.lookup_field)
+                            for inst in view.get_queryset()
+                            .all()
+                            .values("pk", view.lookup_field)
                         }
                     ),
                 )
@@ -305,6 +308,72 @@ class SubscriptionConsumer(JsonWebsocketConsumer):
                     subscription.request_id,
                     model_label,
                     DELETED,
+                    instance_data,
+                    renderer,
+                )
+
+
+class InstanceCreatedSubscriptionConsumer(SubscriptionConsumer):
+    """
+    This consumer sends messages only on model instance creation
+    """
+
+    def model_saved(self, event):
+        """
+        Based on parent's class, but doesn't send messages on update and delete
+        """
+        channel_name: str = event["channel_name"]
+        instance_pk: int = event["instance_pk"]
+        model_label: str = event["model"]
+
+        viewset_class = self.registry[model_label]
+
+        for subscription in self.subscriptions[channel_name]:
+            view = viewset_class.from_scope(
+                subscription.action,
+                self.scope,
+                subscription.view_kwargs,
+                subscription.query_params,
+            )
+
+            model = view.get_model_class()
+            renderer = view.perform_content_negotiation(view.request)[0]
+
+            is_existing_instance = instance_pk in subscription.pks_to_lookup_in_queryset
+            try:
+                instance = view.filter_queryset(view.get_queryset()).get(pk=instance_pk)
+                action = UPDATED if is_existing_instance else CREATED
+
+            except model.DoesNotExist:
+                if not is_existing_instance:
+                    return
+
+                instance = model.objects.get(pk=instance_pk)
+                action = DELETED
+
+            if action == DELETED:
+                del subscription.pks_to_lookup_in_queryset[instance_pk]
+            else:
+                subscription.pks_to_lookup_in_queryset[instance_pk] = getattr(
+                    instance, view.lookup_field
+                )
+
+            if action == CREATED:
+                serializer_class = view.get_serializer_class()
+
+                instance_data = serializer_class(
+                    instance,
+                    context={
+                        "request": view.request,
+                        "format": "json",
+                        "view": view,
+                    },
+                ).data
+
+                self.send_broadcast(
+                    subscription.request_id,
+                    model_label,
+                    action,
                     instance_data,
                     renderer,
                 )
