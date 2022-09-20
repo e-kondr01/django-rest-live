@@ -1,5 +1,9 @@
 Changelog
 =========
+0.7.1 (2022-09-19)
+------------------
+* Fix user not being set in request
+
 0.7.0 (2022-02-13)
 ------------------
 * Support for database deletes
